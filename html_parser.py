@@ -133,6 +133,7 @@ def format_candidates_for_prompt(candidates: List[Dict[str, Any]]) -> str:
         text = c["text"][:60] if c["text"] else ""
         elem_type = c.get("type", "")
         attrs = c.get("attributes", {})
+        context = c.get("context", "")
 
         # Build a readable description
         parts = [f"[{c['id']}]"]
@@ -141,13 +142,22 @@ def format_candidates_for_prompt(candidates: List[Dict[str, Any]]) -> str:
             input_type = elem_type or "text"
             placeholder = attrs.get("placeholder", "")
             name = attrs.get("name", "")
+            value = attrs.get("value", "")
             label = text or placeholder or name or input_type
-            parts.append(f"<input type={input_type}> {label}")
+            desc = f"<input type={input_type}> {label}"
+            if value:
+                desc += f' (current: "{value[:30]}")'
+            parts.append(desc)
         elif tag == "textarea":
             placeholder = attrs.get("placeholder", "")
             parts.append(f"<textarea> {text or placeholder}")
         elif tag == "select":
-            parts.append(f"<select> {text}")
+            options = c.get("options", [])
+            opts_str = ", ".join(options[:5])
+            if opts_str:
+                parts.append(f"<select> {text or attrs.get('name','')} options=[{opts_str}]")
+            else:
+                parts.append(f"<select> {text}")
         elif tag == "a":
             href = attrs.get("href", "")
             parts.append(f"<a> \"{text}\"")
@@ -157,6 +167,9 @@ def format_candidates_for_prompt(candidates: List[Dict[str, Any]]) -> str:
             parts.append(f"<button> \"{text}\"")
         else:
             parts.append(f"<{tag}> \"{text}\"")
+
+        if context:
+            parts.append(f"[{context}]")
 
         lines.append(" ".join(parts))
 
@@ -199,10 +212,23 @@ def _extract_candidate(element: Tag) -> Optional[Dict[str, Any]]:
     # Get parent context
     context = _get_parent_context(element)
 
+    # For select elements, extract options
+    options: list = []
+    if tag == "select":
+        for opt in element.find_all("option", limit=10):
+            opt_text = opt.get_text(strip=True)
+            if opt_text:
+                options.append(opt_text[:40])
+
+    # Get associated label text
+    label_text = _get_associated_label(element)
+    if label_text and not text:
+        text = label_text
+
     # Dedup key
     key = f"{tag}:{selector.get('value', '')}:{text[:30]}"
 
-    return {
+    result = {
         "tag": tag,
         "text": text,
         "type": str(elem_type),
@@ -212,6 +238,9 @@ def _extract_candidate(element: Tag) -> Optional[Dict[str, Any]]:
         "_key": key,
         "_priority": _candidate_priority_value(tag, elem_type),
     }
+    if options:
+        result["options"] = options
+    return result
 
 
 def _build_selector(element: Tag) -> Optional[Dict[str, Any]]:
@@ -275,6 +304,30 @@ def _get_parent_context(element: Tag) -> str:
         role = ancestor.get("role", "")
         if role in ("navigation", "banner", "main", "form"):
             return role
+
+    return ""
+
+
+def _get_associated_label(element: Tag) -> str:
+    """Find label text associated with an input element."""
+    elem_id = element.get("id")
+    if elem_id and element.find_parent():
+        # Search the whole document for label[for=id]
+        root = element.find_parent()
+        while root and root.parent and isinstance(root.parent, Tag) and root.parent.name != "[document]":
+            root = root.parent
+        if root:
+            label = root.find("label", attrs={"for": elem_id})
+            if label:
+                return label.get_text(strip=True)[:60]
+
+    # Check if element is inside a label
+    parent_label = element.find_parent("label")
+    if parent_label:
+        label_text = parent_label.get_text(strip=True)[:60]
+        elem_text = element.get_text(strip=True)
+        if label_text != elem_text:
+            return label_text
 
     return ""
 

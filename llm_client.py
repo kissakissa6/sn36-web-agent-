@@ -18,9 +18,9 @@ from loguru import logger
 _BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 _API_KEY: str = os.getenv("OPENAI_API_KEY", "sk-placeholder")
 _MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
-_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.2"))
-_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "512"))
-_TIMEOUT: float = 60.0
+_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "256"))
+_TIMEOUT: float = 30.0
 
 
 def _is_sandbox() -> bool:

@@ -45,53 +45,49 @@ def wait_action(seconds: float = 1.0) -> Dict[str, Any]:
     return {"type": "WaitAction", "time_seconds": seconds}
 
 
-# Map of action type names to builder helpers (used by agent)
-ACTION_TYPES = {
-    "click", "type", "select", "navigate", "scroll", "wait",
-    "ClickAction", "TypeAction", "SelectDropDownOptionAction",
-    "NavigateAction", "ScrollAction", "WaitAction",
-}
+def done_action() -> Dict[str, Any]:
+    return {"type": "DoneAction"}
 
 
 def build_action_from_llm(decision: Dict[str, Any], candidates: list) -> Optional[Dict[str, Any]]:
-    """Convert LLM decision dict into a proper IWA action.
-
-    The LLM is expected to return JSON like:
-      {"action": "click", "candidate_id": 3}
-      {"action": "type", "candidate_id": 5, "text": "hello"}
-      {"action": "select", "candidate_id": 7, "text": "Option A"}
-      {"action": "navigate", "url": "https://..."}
-      {"action": "scroll", "direction": "down"}
-      {"action": "wait", "seconds": 2}
-    """
-    action = decision.get("action", "").lower().replace("action", "").strip()
+    """Convert LLM decision dict into a proper IWA action."""
+    raw_action = decision.get("action", "")
+    action = raw_action.lower().replace("action", "").strip()
     candidate_id = decision.get("candidate_id")
+
+    # Also accept candidate_id as string
+    if isinstance(candidate_id, str) and candidate_id.isdigit():
+        candidate_id = int(candidate_id)
 
     # Resolve selector from candidate list
     selector = None
-    if candidate_id is not None and 0 <= candidate_id < len(candidates):
+    if candidate_id is not None and isinstance(candidate_id, int) and 0 <= candidate_id < len(candidates):
         selector = candidates[candidate_id].get("selector")
 
     if action == "click":
         if selector:
             return click_action(selector)
-    elif action == "type":
-        text = decision.get("text", "")
+    elif action in ("type", "input", "fill"):
+        text = decision.get("text", decision.get("value", ""))
         if selector and text:
             return type_action(selector, text)
-    elif action == "select":
-        text = decision.get("text", "")
+    elif action in ("select", "selectdropdown", "dropdown"):
+        text = decision.get("text", decision.get("option", ""))
         if selector and text:
             return select_option_action(selector, text)
-    elif action == "navigate":
+    elif action in ("navigate", "goto", "go"):
         url = decision.get("url", "")
         if url:
             return navigate_action(url)
-    elif action == "scroll":
+    elif action in ("scroll", "scrolldown", "scrollup"):
         direction = decision.get("direction", "down").lower()
+        if "up" in action:
+            direction = "up"
         return scroll_action(down=(direction != "up"))
-    elif action == "wait":
-        seconds = float(decision.get("seconds", 1.0))
+    elif action in ("wait", "sleep", "pause"):
+        seconds = float(decision.get("seconds", decision.get("time", 1.0)))
         return wait_action(seconds)
+    elif action in ("done", "complete", "finish"):
+        return done_action()
 
     return None

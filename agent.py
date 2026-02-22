@@ -56,6 +56,11 @@ async def act(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     step_index = payload.get("step_index", 0)
     history = payload.get("history") or []
     model_override = payload.get("model")
+    target_hint = payload.get("target_hint", "")
+
+    # Append target hint to prompt if available
+    if target_hint and target_hint not in prompt:
+        prompt = f"{prompt} (Hint: {target_hint})"
 
     logger.info(f"[{task_id}] Step {step_index} | URL: {url[:80]}")
 
