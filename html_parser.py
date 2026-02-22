@@ -12,8 +12,8 @@ from bs4 import BeautifulSoup, Tag
 from actions import make_selector
 
 
-# Tags considered interactive
-_INTERACTIVE_TAGS = {"a", "button", "input", "textarea", "select", "option"}
+# Tags considered interactive (option excluded; handled within select)
+_INTERACTIVE_TAGS = {"a", "button", "input", "textarea", "select"}
 _CLICKABLE_ROLES = {"button", "link", "tab", "menuitem", "checkbox", "radio", "switch"}
 
 # Maximum candidates to send to LLM (keep prompt small for speed)
@@ -187,15 +187,19 @@ def _extract_candidate(element: Tag) -> Optional[Dict[str, Any]]:
 
     text = _get_visible_text(element)
     elem_type = element.get("type", "")
+    if isinstance(elem_type, list):
+        elem_type = elem_type[0] if elem_type else ""
 
     # Skip hidden/disabled inputs
     if tag == "input" and elem_type in ("hidden",):
         return None
     if element.get("disabled") is not None:
         return None
-    # Skip empty, meaningless elements
+    if element.get("aria-hidden") == "true":
+        return None
+    # Skip standalone options (handled as part of select)
     if tag == "option":
-        return None  # options are part of select, not standalone
+        return None
 
     # Build selector - prefer id, then name, then text content
     selector = _build_selector(element)
@@ -266,7 +270,17 @@ def _build_selector(element: Tag) -> Optional[Dict[str, Any]]:
         if href and isinstance(href, str) and not href.startswith("javascript:"):
             return make_selector(attribute="href", value=href.strip())
 
-    # Fall back to text content matching
+    # Try aria-label as attribute selector
+    aria_label = element.get("aria-label")
+    if aria_label and isinstance(aria_label, str) and aria_label.strip():
+        return make_selector(attribute="aria-label", value=aria_label.strip())
+
+    # Try title as attribute selector
+    title = element.get("title")
+    if title and isinstance(title, str) and title.strip():
+        return make_selector(attribute="title", value=title.strip())
+
+    # Fall back to text content matching (tagContainsSelector)
     text = _get_visible_text(element)
     if text:
         return make_selector(
@@ -311,15 +325,14 @@ def _get_parent_context(element: Tag) -> str:
 def _get_associated_label(element: Tag) -> str:
     """Find label text associated with an input element."""
     elem_id = element.get("id")
-    if elem_id and element.find_parent():
-        # Search the whole document for label[for=id]
-        root = element.find_parent()
-        while root and root.parent and isinstance(root.parent, Tag) and root.parent.name != "[document]":
+    if elem_id:
+        # Walk up to the document root to search for label[for=id]
+        root = element
+        while root.parent and isinstance(root.parent, Tag):
             root = root.parent
-        if root:
-            label = root.find("label", attrs={"for": elem_id})
-            if label:
-                return label.get_text(strip=True)[:60]
+        label = root.find("label", attrs={"for": elem_id})
+        if label:
+            return label.get_text(strip=True)[:60]
 
     # Check if element is inside a label
     parent_label = element.find_parent("label")
@@ -329,6 +342,11 @@ def _get_associated_label(element: Tag) -> str:
         if label_text != elem_text:
             return label_text
 
+    # Check for preceding sibling label or text
+    prev = element.find_previous_sibling("label")
+    if prev and isinstance(prev, Tag):
+        return prev.get_text(strip=True)[:60]
+
     return ""
 
 
@@ -337,7 +355,11 @@ def _get_input_label(element: Tag) -> str:
     # Check for associated label
     elem_id = element.get("id")
     if elem_id:
-        label = element.find_parent().find("label", attrs={"for": elem_id}) if element.find_parent() else None
+        # Walk up to document root to find the label
+        root = element
+        while root.parent and isinstance(root.parent, Tag):
+            root = root.parent
+        label = root.find("label", attrs={"for": elem_id})
         if label:
             return label.get_text(strip=True)[:40]
 
@@ -347,7 +369,8 @@ def _get_input_label(element: Tag) -> str:
         if val and isinstance(val, str):
             return val[:40]
 
-    return element.get("type", "input")
+    etype = element.get("type", "input")
+    return str(etype) if etype else "input"
 
 
 def _candidate_priority(candidate: Dict[str, Any]) -> int:

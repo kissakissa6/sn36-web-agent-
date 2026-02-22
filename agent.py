@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import Body, FastAPI
 from loguru import logger
 
-from actions import build_action_from_llm, scroll_action
+from actions import build_action_from_llm, click_action, scroll_action
 from html_parser import format_candidates_for_prompt, parse_html, build_page_summary
 from llm_client import get_action_decision
 from prompts import SYSTEM_PROMPT, build_user_prompt
@@ -150,8 +150,12 @@ async def _decide_action(
         logger.warning(f"[{task_id}] Could not build action from: {decision}")
         # If LLM gave a candidate_id but action failed, try click as fallback
         cid = decision.get("candidate_id")
-        if cid is not None and 0 <= cid < len(candidates):
-            from actions import click_action
+        if isinstance(cid, str):
+            try:
+                cid = int(cid)
+            except ValueError:
+                cid = None
+        if cid is not None and isinstance(cid, int) and 0 <= cid < len(candidates):
             action = click_action(candidates[cid]["selector"])
         else:
             action = scroll_action(down=True)
