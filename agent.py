@@ -6,10 +6,14 @@ calls the LLM to decide the next action, and returns an IWA-compatible action.
 
 from __future__ import annotations
 
+# load_dotenv MUST run before any project imports so that modules reading
+# env vars at import time (e.g. llm_client) pick up values from .env.
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 from typing import Any, Dict
 
-from dotenv import load_dotenv
 from fastapi import Body, FastAPI
 from loguru import logger
 
@@ -17,8 +21,6 @@ from actions import build_action_from_llm, click_action, scroll_action
 from html_parser import format_candidates_for_prompt, parse_html, build_page_summary
 from llm_client import get_action_decision
 from prompts import SYSTEM_PROMPT, build_user_prompt
-
-load_dotenv()
 
 app = FastAPI(title="SN36 Web Agent", version="1.0.0")
 

@@ -18,10 +18,16 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 
 _BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-_API_KEY: str = os.getenv("OPENAI_API_KEY", "sk-placeholder")
+_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 _MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
-_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
-_MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "256"))
+try:
+    _TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+except ValueError:
+    _TEMPERATURE = 0.1
+try:
+    _MAX_TOKENS: int = int(os.getenv("OPENAI_MAX_TOKENS", "256"))
+except ValueError:
+    _MAX_TOKENS = 256
 _TIMEOUT: float = 30.0
 
 
@@ -115,6 +121,9 @@ async def chat_completion(
                 raise
         else:
             raise
+    except httpx.RequestError as exc:
+        logger.error(f"LLM request failed: {exc}")
+        raise
 
     choice = data.get("choices", [{}])[0]
     message = choice.get("message", {})

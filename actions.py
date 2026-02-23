@@ -177,7 +177,12 @@ def build_action_from_llm(decision: Dict[str, Any], candidates: list) -> Optiona
     elif action == "navigate":
         url = decision.get("url", "")
         if url:
-            return navigate_action(url)
+            # Only allow http/https schemes to prevent file:// or javascript: injection
+            scheme = url.split("://")[0].lower() if "://" in url else ""
+            if scheme in ("http", "https", ""):
+                return navigate_action(url)
+            else:
+                return None
     elif action in ("scroll", "scroll_down", "scroll_up"):
         direction = decision.get("direction", "down").lower()
         if action == "scroll_up" or direction == "up":
